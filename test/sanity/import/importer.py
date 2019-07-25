@@ -25,6 +25,11 @@ except ImportError:
 import ansible.module_utils.basic
 import ansible.module_utils.common.removed
 
+try:
+    from ansible.utils.collection_loader import AnsibleCollectionLoader
+except ImportError:
+    AnsibleCollectionLoader = None
+
 
 class ImporterAnsibleModuleException(Exception):
     """Exception thrown during initialization of ImporterAnsibleModule."""
@@ -48,6 +53,10 @@ def main():
     """Main program function."""
     base_dir = os.getcwd()
     messages = set()
+
+    if AnsibleCollectionLoader:
+        # allow importing code from collections
+        sys.meta_path.insert(0, AnsibleCollectionLoader())
 
     for path in sys.argv[1:] or sys.stdin.read().splitlines():
         test_python_module(path, base_dir, messages, False)
@@ -104,7 +113,7 @@ def test_python_module(path, base_dir, messages, ansible_module):
     except BaseException as ex:  # pylint: disable=locally-disabled, broad-except
         capture_report(path, capture, messages)
 
-        exc_type, _, exc_tb = sys.exc_info()
+        exc_type, _exc, exc_tb = sys.exc_info()
         message = str(ex)
         results = list(reversed(traceback.extract_tb(exc_tb)))
         source = None

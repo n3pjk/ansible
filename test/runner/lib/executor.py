@@ -20,7 +20,6 @@ import shutil
 
 import lib.types as t
 
-import lib.pytar
 import lib.thread
 
 from lib.core_ci import (
@@ -59,7 +58,7 @@ from lib.util import (
     get_remote_completion,
     COVERAGE_OUTPUT_PATH,
     cmd_quote,
-    INSTALL_ROOT,
+    ANSIBLE_ROOT,
 )
 
 from lib.util_common import (
@@ -126,6 +125,14 @@ from lib.integration import (
     setup_common_temp_dir,
 )
 
+from lib.coverage_util import (
+    coverage_context,
+)
+
+from lib.data import (
+    data_context,
+)
+
 SUPPORTED_PYTHON_VERSIONS = (
     '2.6',
     '2.7',
@@ -152,7 +159,7 @@ def check_legacy_modules():
     for directory in 'core', 'extras':
         path = 'lib/ansible/modules/%s' % directory
 
-        for root, _, file_names in os.walk(path):
+        for root, _dir_names, file_names in os.walk(path):
             if file_names:
                 # the directory shouldn't exist, but if it does, it must contain no files
                 raise ApplicationError('Files prohibited in "%s". '
@@ -180,6 +187,10 @@ def install_command_requirements(args, python_version=None):
     :type args: EnvironmentConfig
     :type python_version: str | None
     """
+    if not args.explain:
+        make_dirs('test/results/coverage')
+        make_dirs('test/results/data')
+
     if isinstance(args, ShellConfig):
         if args.raw:
             return
@@ -271,7 +282,7 @@ def pip_list(args, pip):
     :type pip: list[str]
     :rtype: str
     """
-    stdout, _ = run_command(args, pip + ['list'], capture=True)
+    stdout = run_command(args, pip + ['list'], capture=True)[0]
     return stdout
 
 
@@ -279,10 +290,13 @@ def generate_egg_info(args):
     """
     :type args: EnvironmentConfig
     """
-    if os.path.isdir(os.path.join(INSTALL_ROOT, 'lib/ansible.egg-info')):
+    if not os.path.exists(os.path.join(ANSIBLE_ROOT, 'setup.py')):
         return
 
-    run_command(args, [args.python_executable, 'setup.py', 'egg_info'], cwd=INSTALL_ROOT, capture=args.verbosity < 3)
+    if os.path.isdir(os.path.join(ANSIBLE_ROOT, 'lib/ansible.egg-info')):
+        return
+
+    run_command(args, [args.python_executable, 'setup.py', 'egg_info'], cwd=ANSIBLE_ROOT, capture=args.verbosity < 3)
 
 
 def generate_pip_install(pip, command, packages=None):
@@ -292,8 +306,8 @@ def generate_pip_install(pip, command, packages=None):
     :type packages: list[str] | None
     :rtype: list[str] | None
     """
-    constraints = 'test/runner/requirements/constraints.txt'
-    requirements = 'test/runner/requirements/%s.txt' % command
+    constraints = os.path.join(ANSIBLE_ROOT, 'test/runner/requirements/constraints.txt')
+    requirements = os.path.join(ANSIBLE_ROOT, 'test/runner/requirements/%s.txt' % command)
 
     options = []
 
@@ -841,7 +855,7 @@ def command_integration_filtered(args, targets, all_targets, inventory_path, pre
 
     # common temporary directory path that will be valid on both the controller and the remote
     # it must be common because it will be referenced in environment variables that are shared across multiple hosts
-    common_temp_path = '/tmp/ansible-test-%s' % ''.join(random.choice(string.ascii_letters + string.digits) for _ in range(8))
+    common_temp_path = '/tmp/ansible-test-%s' % ''.join(random.choice(string.ascii_letters + string.digits) for _idx in range(8))
 
     setup_common_temp_dir(args, common_temp_path)
 
@@ -1039,7 +1053,7 @@ def run_httptester(args, ports=None):
         for localhost_port, container_port in ports.items():
             options += ['-p', '%d:%d' % (localhost_port, container_port)]
 
-    httptester_id, _ = docker_run(args, args.httptester, options=options)
+    httptester_id = docker_run(args, args.httptester, options=options)[0]
 
     if args.explain:
         httptester_id = 'httptester_id'
@@ -1343,8 +1357,11 @@ def command_units(args):
         if args.coverage:
             plugins.append('ansible_pytest_coverage')
 
+        if data_context().content.collection:
+            plugins.append('ansible_pytest_collections')
+
         if plugins:
-            env['PYTHONPATH'] += ':%s' % os.path.join(INSTALL_ROOT, 'test/units/pytest/plugins')
+            env['PYTHONPATH'] += ':%s' % os.path.join(ANSIBLE_ROOT, 'test/units/pytest/plugins')
 
             for plugin in plugins:
                 cmd.extend(['-p', plugin])
@@ -1368,7 +1385,8 @@ def command_units(args):
         display.info('Unit test with Python %s' % version)
 
         try:
-            intercept_command(args, command, target_name='units', env=env, python_version=version)
+            with coverage_context(args):
+                intercept_command(args, command, target_name='units', env=env, python_version=version)
         except SubprocessError as ex:
             # pytest exits with status code 5 when all tests are skipped, which isn't an error for our use case
             if ex.status != 5:
@@ -1813,7 +1831,7 @@ class EnvironmentDescription:
         versions += SUPPORTED_PYTHON_VERSIONS
         versions += list(set(v.split('.')[0] for v in SUPPORTED_PYTHON_VERSIONS))
 
-        version_check = os.path.join(INSTALL_ROOT, 'test/runner/versions.py')
+        version_check = os.path.join(ANSIBLE_ROOT, 'test/runner/versions.py')
         python_paths = dict((v, find_executable('python%s' % v, required=False)) for v in sorted(versions))
         pip_paths = dict((v, find_executable('pip%s' % v, required=False)) for v in sorted(versions))
         program_versions = dict((v, self.get_version([python_paths[v], version_check], warnings)) for v in sorted(python_paths) if python_paths[v])

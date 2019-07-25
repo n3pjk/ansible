@@ -8,7 +8,8 @@ import traceback
 import uuid
 import errno
 import time
-import shutil
+
+import lib.types as t
 
 from lib.http import (
     HttpClient,
@@ -21,6 +22,7 @@ from lib.util import (
     make_dirs,
     display,
     is_shippable,
+    to_text,
 )
 
 from lib.util_common import (
@@ -29,6 +31,10 @@ from lib.util_common import (
 
 from lib.config import (
     EnvironmentConfig,
+)
+
+from lib.data import (
+    data_context,
 )
 
 AWS_ENDPOINTS = {
@@ -186,7 +192,7 @@ class AnsibleCoreCI:
         display.info('Getting available endpoints...', verbosity=1)
         sleep = 3
 
-        for _ in range(1, 10):
+        for _iteration in range(1, 10):
             response = client.get('https://s3.amazonaws.com/ansible-ci-files/ansible-test/parallels-endpoints.txt')
 
             if response.status_code == 200:
@@ -324,7 +330,7 @@ class AnsibleCoreCI:
 
     def wait(self):
         """Wait for the instance to become ready."""
-        for _ in range(1, 90):
+        for _iteration in range(1, 90):
             if self.get().running:
                 return
             time.sleep(10)
@@ -342,7 +348,7 @@ class AnsibleCoreCI:
 
         if self.platform == 'windows':
             with open('examples/scripts/ConfigureRemotingForAnsible.ps1', 'rb') as winrm_config_fd:
-                winrm_config = winrm_config_fd.read().decode('utf-8')
+                winrm_config = to_text(winrm_config_fd.read())
         else:
             winrm_config = None
 
@@ -546,10 +552,13 @@ class SshKey:
         """
         :type args: EnvironmentConfig
         """
-        cache_dir = 'test/cache'
+        cache_dir = os.path.join(data_context().content.root, 'test/cache')
 
         self.key = os.path.join(cache_dir, self.KEY_NAME)
         self.pub = os.path.join(cache_dir, self.PUB_NAME)
+
+        key_dst = os.path.relpath(self.key, data_context().content.root)
+        pub_dst = os.path.relpath(self.pub, data_context().content.root)
 
         if not os.path.isfile(self.key) or not os.path.isfile(self.pub):
             base_dir = os.path.expanduser('~/.ansible/test/')
@@ -563,9 +572,15 @@ class SshKey:
             if not os.path.isfile(key) or not os.path.isfile(pub):
                 run_command(args, ['ssh-keygen', '-m', 'PEM', '-q', '-t', 'rsa', '-N', '', '-f', key])
 
-            if not args.explain:
-                shutil.copy2(key, self.key)
-                shutil.copy2(pub, self.pub)
+            self.key = key
+            self.pub = pub
+
+            def ssh_key_callback(files):  # type: (t.List[t.Tuple[str, str]]) -> None
+                """Add the SSH keys to the payload file list."""
+                files.append((key, key_dst))
+                files.append((pub, pub_dst))
+
+            data_context().register_payload_callback(ssh_key_callback)
 
         if args.explain:
             self.pub_contents = None

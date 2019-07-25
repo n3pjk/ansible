@@ -5,12 +5,15 @@ __metaclass__ = type
 try:
     from typing import (
         Any,
+        AnyStr,
+        Callable,
         Dict,
         FrozenSet,
         Iterable,
         List,
         Optional,
         Set,
+        Text,
         Tuple,
         Type,
         TypeVar,
