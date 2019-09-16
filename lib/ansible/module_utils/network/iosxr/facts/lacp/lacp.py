@@ -56,9 +56,9 @@ class LacpFacts(object):
 
         ansible_facts['ansible_network_resources'].pop('lacp', None)
         facts = {}
-        if obj:
-            params = utils.validate_config(self.argument_spec, {'config': obj})
-            facts['lacp'] = utils.remove_empties(params['config'])
+
+        params = utils.validate_config(self.argument_spec, {'config': obj})
+        facts['lacp'] = utils.remove_empties(params['config'])
 
         ansible_facts['ansible_network_resources'].update(facts)
         return ansible_facts
@@ -77,6 +77,6 @@ class LacpFacts(object):
 
         system_priority = utils.parse_conf_arg(conf, 'priority')
         config['system']['priority'] = int(system_priority) if system_priority else system_priority
-        config['system']['mac'] = utils.parse_conf_arg(conf, 'mac')
+        config['system']['mac']['address'] = utils.parse_conf_arg(conf, 'mac')
 
         return config

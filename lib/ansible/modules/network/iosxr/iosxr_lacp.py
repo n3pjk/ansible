@@ -42,6 +42,9 @@ version_added: 2.9
 short_description: Manage Global Link Aggregation Control Protocol (LACP) on IOS-XR devices.
 description:
   - This module manages Global Link Aggregation Control Protocol (LACP) on IOS-XR devices.
+notes:
+  - Tested against IOS-XR 6.1.3.
+  - This module works with connection C(network_cli). See L(the IOS-XR Platform Options,../network/user_guide/platform_iosxr.html).
 author: Nilashish Chakraborty (@nilashishc)
 options:
   config:
@@ -59,12 +62,17 @@ options:
               - Refer to vendor documentation for valid values.
             type: int
           mac:
+            type: dict
             description:
-              - The system ID to use in LACP negotiations.
-            type: str
+              - The system MAC related configuration for LACP.
+            suboptions:
+              address:
+                description:
+                  - The system ID to use in LACP negotiations.
+                type: str
   state:
     description:
-      - The state the configuration should be left in.
+      - The state of the configuration after module completion.
     type: str
     choices:
     - merged
@@ -92,7 +100,8 @@ EXAMPLES = """
     config:
       system:
         priority: 10
-        mac: 00c1.4c00.bd15
+        mac:
+          address: 00c1.4c00.bd15
     state: merged
 
 #
@@ -112,7 +121,9 @@ EXAMPLES = """
 #
 # "after": {
 #    "system": {
-#       "mac": "00c1.4c00.bd15",
+#       "mac": {
+#          "address": "00c1.4c00.bd15"
+#       },
 #       "priority": 10
 #     }
 #  }
@@ -156,7 +167,9 @@ EXAMPLES = """
 # -----------------------
 # "before": {
 #    "system": {
-#       "mac": "00c1.4c00.bd15",
+#       "mac": {
+#         "address": "00c1.4c00.bd15"
+#       },
 #       "priority": 10
 #    }
 #  }
@@ -211,7 +224,9 @@ EXAMPLES = """
 # -----------------------
 # "before": {
 #    "system": {
-#       "mac": "00c1.4c00.bd15",
+#       "mac": {
+#         "address": "00c1.4c00.bd15"
+#       },
 #       "priority": 11
 #    }
 # }
@@ -240,16 +255,16 @@ EXAMPLES = """
 """
 RETURN = """
 before:
-  description: The configuration prior to the model invocation.
+  description: The configuration as structured data prior to module invocation.
   returned: always
-  type: list
+  type: dict
   sample: >
     The configuration returned will always be in the same format
      of the parameters above.
 after:
-  description: The resulting configuration model invocation.
+  description: The configuration as structured data after module completion.
   returned: when changed
-  type: list
+  type: dict
   sample: >
     The configuration returned will always be in the same format
      of the parameters above.
@@ -272,7 +287,9 @@ def main():
 
     :returns: the result form module invocation
     """
-    module = AnsibleModule(argument_spec=LacpArgs.argument_spec,
+    required_if = [('state', 'merged', ('config',)),
+                   ('state', 'replaced', ('config',))]
+    module = AnsibleModule(argument_spec=LacpArgs.argument_spec, required_if=required_if,
                            supports_check_mode=True)
 
     result = Lacp(module).execute_module()
